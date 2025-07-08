@@ -15,10 +15,9 @@ from PIL import Image
 USER_ID = '950475'
 
 # 2. 筛选条件 (核心配置)
-# ❗️❗️❗️ 这是生成目录和筛选番剧的核心，请确保格式正确
 FILTER_AIR_YEAR_MONTH = '2025-04' # 格式: 'YYYY-MM'
 
-# 3. Headers (非常重要，Bangumi对爬虫有一定限制)
+# 3. Headers 
 SCRAPE_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 }
@@ -30,11 +29,11 @@ API_HEADERS = {
 STATUSES = ['collect', 'on_hold', 'dropped']
 
 # 5. 代理设置 (如果不需要代理，请将 PROXY 设置为 None)
-# PROXY = {
-#     'http': 'http://127.0.0.1:7890',
-#     'https': 'http://127.0.0.1:7890'
-# }
-PROXY = None 
+PROXY = {
+    'http': 'http://127.0.0.1:7890',
+    'https': 'http://127.0.0.1:7890'
+}
+# PROXY = None 
 
 # ==================== 工具函数 ====================
 
@@ -78,40 +77,68 @@ def extract_air_date(info_text):
             return match.group(1).replace('/', '-')
     return "Unknown"
 
-def extract_dominant_rgb(image_path):
-    """优化版主色提取"""
-    if not os.path.exists(image_path):
-        return None
+# def extract_dominant_rgb(image_path):
+#     """优化版主色提取"""
+#     if not os.path.exists(image_path):
+#         return None
     
+#     try:
+#         # 先缩小图片尺寸再提取颜色
+#         img = Image.open(image_path)
+        
+#         # 转换为RGB如果还不是
+#         if img.mode != 'RGB':
+#             img = img.convert('RGB')
+            
+#         # 直接采样部分像素而不是分析全部
+#         pixels = list(img.getdata())
+#         sample_size = min(500, len(pixels))
+#         sampled_pixels = random.sample(pixels, sample_size)
+        
+#         # 简单的颜色聚类
+#         from collections import defaultdict
+#         color_groups = defaultdict(list)
+#         for r, g, b in sampled_pixels:
+#             # 将颜色分组到较大的区间
+#             key = (r//16, g//16, b//16)
+#             color_groups[key].append((r, g, b))
+            
+#         # 找出最大的颜色组
+#         largest_group = max(color_groups.values(), key=len)
+#         avg_color = tuple(int(sum(x)/len(x)) for x in zip(*largest_group))
+        
+#         return avg_color
+        
+#     except Exception as e:
+#         print(f"⚠️ 提取颜色失败: {e}")
+#         return None
+
+def extract_dominant_rgb(image_path):
+    """从图片提取一个美观的主色调，返回RGB元组 (r, g, b)"""
+    if not image_path or not os.path.exists(image_path):
+        return None
     try:
-        # 先缩小图片尺寸再提取颜色
-        img = Image.open(image_path)
-        
-        # 转换为RGB如果还不是
-        if img.mode != 'RGB':
-            img = img.convert('RGB')
-            
-        # 直接采样部分像素而不是分析全部
-        pixels = list(img.getdata())
-        sample_size = min(500, len(pixels))
-        sampled_pixels = random.sample(pixels, sample_size)
-        
-        # 简单的颜色聚类
-        from collections import defaultdict
-        color_groups = defaultdict(list)
-        for r, g, b in sampled_pixels:
-            # 将颜色分组到较大的区间
-            key = (r//16, g//16, b//16)
-            color_groups[key].append((r, g, b))
-            
-        # 找出最大的颜色组
-        largest_group = max(color_groups.values(), key=len)
-        avg_color = tuple(int(sum(x)/len(x)) for x in zip(*largest_group))
-        
-        return avg_color
-        
+        colors = colorgram.extract(image_path, 12)
+        best_color = None
+        max_score = -1
+        for color in colors:
+            hsl = color.hsl
+            if hsl.s < 0.1 or hsl.l < 0.05 or hsl.l > 0.95:
+                continue
+            score = hsl.s - abs(hsl.l - 0.5)
+            if score > max_score:
+                max_score = score
+                best_color = color.rgb
+        if best_color:
+            return best_color
+        else:
+            for color in sorted(colors, key=lambda c: c.proportion, reverse=True):
+                if color.rgb.r > 10 and color.rgb.g > 10 and color.rgb.b > 10 and \
+                   color.rgb.r < 245 and color.rgb.g < 245 and color.rgb.b < 245:
+                    return color.rgb
+        return colors[0].rgb
     except Exception as e:
-        print(f"⚠️ 提取颜色失败: {e}")
+        print(f"    ⚠️ 提取颜色失败 ({os.path.basename(image_path)}): {e}。")
         return None
 
 def is_color_light(rgb_tuple):
@@ -194,7 +221,7 @@ def parse_page(soup, status):
             print(f"❌ 解析某个条目时出错，已跳过: {e}")
     return results
 
-# ==================== Markdown 生成函数 (核心改进) ====================
+# ==================== Markdown 生成函数====================
 
 def generate_markdown_file(anime_list, output_dir):
     md_path = os.path.join(output_dir, "index.md")
@@ -216,7 +243,7 @@ showTableOfContents: true
 ---
 """
 
-    # 2. 概述 (无变化)
+    # 2. 概述
     overview = """
 {{< lead >}}
 在这里写下你对本季新番的总体概述和看法...
@@ -225,7 +252,7 @@ showTableOfContents: true
 ---
 """
     
-    # 3. 生成卡片 (核心修改部分)
+    # 3. 生成卡片
     cards_content = ""
     for item in anime_list:
         if not item['poster_path']: continue
@@ -238,7 +265,8 @@ showTableOfContents: true
         dominant_rgb = extract_dominant_rgb(item['poster_path'])
         
         if dominant_rgb:
-            background_style = f"background-color: rgba({dominant_rgb[0]}, {dominant_rgb[1]}, {dominant_rgb[2]}, 0.75);"
+            background_style = f"background-color: rgba({dominant_rgb.r}, {dominant_rgb.g}, {dominant_rgb.b}, 0.75);"
+            # background_style = f"background-color: rgba({dominant_rgb[0]}, {dominant_rgb[1]}, {dominant_rgb[2]}, 0.75);"
             is_light = is_color_light(dominant_rgb)
             link_class = 'text-gray-800 hover:text-sky-600' if is_light else 'text-white hover:text-sky-300'
             prose_class = 'prose' if is_light else 'prose prose-invert'
@@ -254,22 +282,16 @@ showTableOfContents: true
         status_text = {'collect': '看过', 'on_hold': '搁置', 'dropped': '弃番'}.get(item['status'], '未知')
         rating_text = f"<strong>{item['rating_score']}/10</strong>" if item['rating_score'] > 0 else "未评分"
         comment = item['comment'].replace('\r\n', '<br>').replace('\n', '<br>') if item['comment'] else "暂无短评。"
-        
-        # card_html 变量已根据您的要求优化
         card_html = f"""
-<div class="my-16 p-8 sm:p-10 rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300" style="{background_style}">
-    <!-- 修改点 1: 在桌面端(sm)为flex容器添加 gap-x-10 (列间距) -->
-    <div class="flex flex-col sm:flex-row sm:gap-x-10">
-        <!-- 海报区域: 宽度调整为 sm:w-2/5 (近似40%)，以符合4:1:5的布局感 -->
-        <div class="w-full sm:w-2/5 flex-shrink-0 flex justify-center items-start">
-            <a href="{item['link']}" target="_blank" rel="noopener noreferrer" class="block">
-                <img src="{poster_md_path}" alt="{item['title']} 海报" 
-                     class="rounded-lg object-cover w-full max-w-xs mx-auto shadow-md hover:scale-105 transition-transform duration-300">
-            </a>
+<div class="mb-8 p-4 border rounded-lg dark:border-neutral-700" style="{background_style}">
+    <div class="flex flex-col sm:flex-row gap-4">
+        <!-- 海报区域 -->
+        <div class="w-full sm:w-1/4 flex-shrink-0 flex justify-center items-start">
+            <img src="{poster_md_path}" alt="{item['title']} 海报" 
+                class="rounded-md object-cover w-full max-w-xs mx-auto shadow-md">
         </div>
         <!-- 内容区域 -->
-        <!-- 修改点 2: 移除 sm:pl-10，因为 gap 已处理间距。宽度调整为 sm:w-3/5 (近似60%) -->
-        <div class="w-full sm:w-3/5 {prose_class} mt-10 sm:mt-0">
+        <div class="w-full sm:w-3/4 {prose_class}">
             <!-- 标题区域 -->
             <div class="pb-3 border-b {border_class}">
                 <h4 class="text-2xl font-bold">
@@ -306,7 +328,7 @@ showTableOfContents: true
 """
         cards_content += card_html
 
-    # 4. 写入文件 (无变化)
+    # 4. 写入文件 
     try:
         with open(md_path, 'w', encoding='utf-8') as f:
             f.write(front_matter)
@@ -315,8 +337,7 @@ showTableOfContents: true
         print(f"\n🎉 成功生成 Markdown 文件: {md_path}")
     except IOError as e:
         print(f"❌ 保存 Markdown 文件失败: {e}")
-       
-# ==================== 主函数 (大部分保持不变) ====================
+
 
 def main():
     if not FILTER_AIR_YEAR_MONTH or not re.match(r'^\d{4}-\d{2}$', FILTER_AIR_YEAR_MONTH):
