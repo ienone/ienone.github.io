@@ -4159,4 +4159,4 @@
 }@property --tw-content{syntax: "*";
   initial-value: "";
   inherits: false;
-}
+}.spoiler{background-color:rgba(var(--color-neutral-800),.95);color:transparent;border-radius:6px;padding:2px 6px;transition:background-color .3s cubic-bezier(.4,0,.2,1),color .2s cubic-bezier(.4,0,.2,1),transform .2s cubic-bezier(.4,0,.2,1);cursor:pointer;display:inline-block;vertical-align:bottom}.spoiler a{color:transparent!important;text-decoration-color:transparent!important;transition:color .2s ease,text-decoration-color .2s ease}.spoiler:hover{background-color:transparent;color:inherit;transform:scale(1.03)}.spoiler:hover a{color:inherit!important;text-decoration-color:inherit!important}
