@@ -1,13 +1,10 @@
-import requests
-from bs4 import BeautifulSoup
 import re
 import os
 import time
 import random
 import json
+import html
 from datetime import datetime, timedelta
-import colorgram
-from PIL import Image
 
 # ==================== 配置区域 ====================
 
@@ -206,6 +203,7 @@ def extract_air_date(info_text):
 
 def resize_image_with_aspect_ratio(image, max_width):
     """保持长宽比缩放图片到指定最大宽度"""
+    from PIL import Image
     if image.width <= max_width:
         return image
     
@@ -215,6 +213,8 @@ def resize_image_with_aspect_ratio(image, max_width):
 
 def extract_dominant_rgb(image_path):
     """从图片提取一个美观的主色调，返回RGB元组 (r, g, b)"""
+    import colorgram
+    from PIL import Image
     if not image_path or not os.path.exists(image_path):
         return None
     try:
@@ -257,6 +257,8 @@ def is_color_light(rgb_tuple):
 # ==================== 海报下载函数 ====================
 
 def download_poster(subject_id, title, poster_dir):
+    import requests
+    from PIL import Image
     api_url = f'https://api.bgm.tv/v0/subjects/{subject_id}/image?type=large'
     safe_title = sanitize_filename(title)
     
@@ -467,81 +469,39 @@ def generate_old_anime_summary(old_anime_list):
     return "\n".join(summary_lines)
 
 def generate_anime_card(item):
-    """生成单个番剧卡片的HTML"""
+    """生成与历史文章共用的 review-card shortcode（无需网络或颜色提取）。"""
     poster_filename = os.path.basename(item['poster_path'])
-    poster_md_path = f"./bgm_posters/{poster_filename}"
-    
-    dominant_rgb = extract_dominant_rgb(item['poster_path'])
-    
-    if dominant_rgb:
-        background_style = f"background-color: rgba({dominant_rgb.r}, {dominant_rgb.g}, {dominant_rgb.b}, 0.75);"
-        is_light = is_color_light(dominant_rgb)
-        link_class = 'text-gray-800 hover:text-sky-600' if is_light else 'text-white hover:text-sky-300'
-        prose_class = 'prose' if is_light else 'prose prose-invert'
-        border_class = 'border-gray-400/50' if is_light else 'border-gray-500/50'
-        comment_bg_class = 'bg-black/10' if is_light else 'bg-white/10'
-    else:
-        background_style = "background-color: #374151;"
-        link_class = 'text-white hover:text-sky-300'
-        prose_class = 'prose prose-invert'
-        border_class = 'border-gray-500/50'
-        comment_bg_class = 'bg-white/10'
-
     status_text = {'collect': '看过', 'on_hold': '搁置', 'dropped': '弃番'}.get(item['status'], '未知')
-    rating_text = f"<strong>{item['rating_score']}/10</strong>" if item['rating_score'] > 0 else "未评分"
-    comment = item['comment'].replace('\r\n', '<br>').replace('\n', '<br>') if item['comment'] else "暂无短评。"
-    
-    return f"""
-### {item['title']}
-
-<div class="mb-8 p-4 border rounded-lg dark:border-neutral-700" style="{background_style}">
-    <div class="flex flex-col sm:flex-row gap-4">
-        <!-- 海报区域 -->
-        <div class="w-full sm:w-1/4 flex-shrink-0 flex justify-center items-start">
-            <img src="{poster_md_path}" alt="{item['title']} 海报" 
-                class="rounded-md object-cover w-full max-w-xs mx-auto shadow-md">
-        </div>
-        <!-- 内容区域 -->
-        <div class="w-full sm:w-3/4 {prose_class}">
-            <!-- 标题区域 -->
-            <div class="pb-3 border-b {border_class}">
-                <h4 class="text-2xl font-bold">
-                    <a href="{item['link']}" target="_blank" rel="noopener noreferrer" class="{link_class} transition-colors duration-200">
-                        {item['title']}
-                    </a>
-                </h4>
-                <div class="flex items-center mt-2 gap-4">
-                    <div class="font-semibold flex items-center">
-                        <span class="text-amber-400 flex items-center">{{{{< icon "star" >}}}}</span>
-                        <span class="ml-1.5">{rating_text}</span>
-                    </div>
-                    <div>
-                        <span class="font-medium">状态:</span> {status_text}
-                    </div>
-                </div>
-            </div>
-            <!-- 评论区域 -->
-            <div class="rounded-lg p-4 my-4 {comment_bg_class}">
-                <div class="{prose_class} max-w-none leading-relaxed">
-                    <p>{comment}</p>
-                </div>
-            </div>
-            <!-- 元信息区域 -->
-            <div class="mt-4 pt-3 border-t {border_class} text-sm">
-                <div class="flex flex-wrap gap-x-6 gap-y-2">
-                    <div><span class="font-medium">放送日期:</span> {item['air_date']}</div>
-                    <div><span class="font-medium">评价日期:</span> {item['rating_date'] or '未知'}</div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-"""
+    rating_text = f"{item['rating_score']}/10" if item['rating_score'] > 0 else "未评分"
+    attributes = {
+        'title': item['title'],
+        'href': item['link'],
+        'poster': f"./bgm_posters/{poster_filename}",
+        'alt': f"{item['title']} 海报",
+        'rating': rating_text,
+        'status': status_text,
+        'aired': item['air_date'],
+        'dateLabel': '评价日期',
+        'date': item['rating_date'] or '未知',
+    }
+    # JSON string quoting is also valid Hugo shortcode quoting. Remote comments
+    # are text, not trusted HTML or executable shortcode source.
+    params = "\n".join(f"  {key}={json.dumps(str(value), ensure_ascii=False)}" for key, value in attributes.items())
+    comment = html.escape(item['comment'] or "暂无短评。")
+    comment = comment.replace('{{', '&#123;&#123;').replace('}}', '&#125;&#125;')
+    comment = comment.replace('\r\n', '\n').replace('\n', '<br>')
+    return (f"\n### {item['title']}\n\n"
+            + "{{< review-card\n" + params + "\n>}}\n"
+            + f"<p>{comment}</p>\n"
+            + "{{< /review-card >}}\n\n")
 
 # ==================== 主函数 (修改) ====================
 
 def main():
+    # Optional scraping dependencies are loaded only for a requested fetch.
+    import requests
+    from bs4 import BeautifulSoup
+
     if not FILTER_AIR_YEAR_MONTH or not re.match(r'^\d{4}-\d{2}$', FILTER_AIR_YEAR_MONTH):
         print("❌ 错误: 请在脚本中正确设置 FILTER_AIR_YEAR_MONTH (格式: YYYY-MM)。")
         return
