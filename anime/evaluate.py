@@ -182,8 +182,8 @@ def categorize_anime(air_date_str, target_month_str):
         air_date.month in prev_season_months):
         return "recent_anime"  # 近期番剧（上一季度）
     
-    # 其他都归类为补旧番
-    return "old_anime"  # 补旧番
+    # 其他都归类为回顾旧番
+    return "old_anime"  # 回顾旧番
 
 def extract_air_date(info_text):
     info_text = info_text.strip()
@@ -384,7 +384,7 @@ def parse_page(soup, status, start_date, end_date, target_month):
 def generate_markdown_file(anime_data, output_dir):
     md_path = os.path.join(output_dir, "index.md")
     
-    # 分离不同类型的番剧，只保留当季新番和补旧番
+    # 分离不同类型的番剧，只保留当季新番和回顾旧番
     current_season = [item for item in anime_data if item['category'] == 'current_season']
     old_anime = [item for item in anime_data if item['category'] == 'old_anime']
     # 近期番剧不展示，因为应该在上个季度已经被总结过了
@@ -420,8 +420,8 @@ showTableOfContents: true
 ### {season_name}新番
 - 本季度新番共看完 {len([x for x in current_season if x['status'] == 'collect'])} 部，弃番 {len([x for x in current_season if x['status'] == 'dropped'])} 部，搁置 {len([x for x in current_season if x['status'] == 'on_hold'])} 部。
 
-### 补旧番
-- 补旧番共 {len(old_anime)} 部：
+### 回顾旧番
+- 回顾旧番共 {len(old_anime)} 部：
 {generate_old_anime_summary(old_anime)}
 
 ---
@@ -436,10 +436,10 @@ showTableOfContents: true
             continue
         current_season_content += generate_anime_card(item)
 
-    # 4. 补旧番简要展示
+    # 4. 回顾旧番简要展示
     old_anime_section = ""
     if old_anime:
-        old_anime_section = "\n## 补旧番记录\n\n"
+        old_anime_section = "\n## 回顾旧番记录\n\n"
         for item in sorted(old_anime, key=lambda x: x.get('rating_score', 0), reverse=True):
             status_text = {'collect': '看过', 'on_hold': '搁置', 'dropped': '弃番'}.get(item['status'], '未知')
             rating_text = f"{item['rating_score']}/10" if item['rating_score'] > 0 else "未评分"
@@ -457,9 +457,9 @@ showTableOfContents: true
         print(f"❌ 保存 Markdown 文件失败: {e}")
 
 def generate_old_anime_summary(old_anime_list):
-    """生成补旧番概述"""
+    """生成回顾旧番概述"""
     if not old_anime_list:
-        return "  - 本期间未补旧番"
+        return "  - 本期间未回顾旧番"
     
     summary_lines = []
     for item in old_anime_list:
@@ -563,7 +563,7 @@ def main():
     print(f"\n📊 分类统计:")
     print(f"  - 当季新番: {len(current_season)} 部")
     print(f"  - 近期番剧: {len(recent_anime)} 部 (不下载海报)")
-    print(f"  - 补旧番: {len(old_anime)} 部 (不下载海报)")
+    print(f"  - 回顾旧番: {len(old_anime)} 部 (不下载海报)")
     
     # 只为当季新番下载海报
     if current_season:
@@ -576,13 +576,13 @@ def main():
     else:
         print("\n⚠️ 没有当季新番需要下载海报。")
     
-    # 为补旧番和近期番剧设置空的海报路径
+    # 为回顾旧番和近期番剧设置空的海报路径
     for item in old_anime + recent_anime:
         item['poster_path'] = None
 
     # 生成Markdown文件
     valid_items = [item for item in all_collected_data if item['category'] == 'current_season' and item['poster_path']] + old_anime
-    print(f"\n✅ 处理完成。有效条目 {len(valid_items)} 个（当季新番: {len([x for x in valid_items if x['category'] == 'current_season'])}, 补旧番: {len(old_anime)}）。")
+    print(f"\n✅ 处理完成。有效条目 {len(valid_items)} 个（当季新番: {len([x for x in valid_items if x['category'] == 'current_season'])}, 回顾旧番: {len(old_anime)}）。")
     
     generate_markdown_file(valid_items, output_dir)
 
