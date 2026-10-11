@@ -1,7 +1,6 @@
 import re
 import os
 import time
-import random
 import json
 import html
 from datetime import datetime, timedelta
@@ -34,7 +33,6 @@ PROXY = {
 
 # 6. 图片处理配置
 MAX_POSTER_WIDTH = 1200  # 海报保存时的最大宽度
-COLOR_SAMPLING_WIDTH = 480  # 颜色提取时的采样宽度
 
 # ==================== 工具函数 ====================
 
@@ -210,49 +208,6 @@ def resize_image_with_aspect_ratio(image, max_width):
     ratio = max_width / image.width
     new_height = int(image.height * ratio)
     return image.resize((max_width, new_height), Image.Resampling.LANCZOS)
-
-def extract_dominant_rgb(image_path):
-    """从图片提取一个美观的主色调，返回RGB元组 (r, g, b)"""
-    import colorgram
-    from PIL import Image
-    if not image_path or not os.path.exists(image_path):
-        return None
-    try:
-        # 先缩放图片到较小尺寸进行颜色采样，提升处理速度
-        with Image.open(image_path) as img:
-            img = img.convert("RGB")
-            sampled_img = resize_image_with_aspect_ratio(img, COLOR_SAMPLING_WIDTH)
-            
-        colors = colorgram.extract(sampled_img, 12)
-        best_color = None
-        max_score = -1
-        for color in colors:
-            hsl = color.hsl
-            if hsl.s < 0.1 or hsl.l < 0.05 or hsl.l > 0.95:
-                continue
-            score = hsl.s - abs(hsl.l - 0.5)
-            if score > max_score:
-                max_score = score
-                best_color = color.rgb
-        if best_color:
-            return best_color
-        else:
-            for color in sorted(colors, key=lambda c: c.proportion, reverse=True):
-                if color.rgb.r > 10 and color.rgb.g > 10 and color.rgb.b > 10 and \
-                   color.rgb.r < 245 and color.rgb.g < 245 and color.rgb.b < 245:
-                    return color.rgb
-        return colors[0].rgb
-    except Exception as e:
-        print(f"    ⚠️ 提取颜色失败 ({os.path.basename(image_path)}): {e}。")
-        return None
-
-def is_color_light(rgb_tuple):
-    """根据W3C亮度公式判断颜色是浅色还是深色"""
-    if not rgb_tuple:
-        return False
-    r, g, b = rgb_tuple
-    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-    return luminance > 0.5 # 亮度大于0.5认为是浅色
 
 # ==================== 海报下载函数 ====================
 
